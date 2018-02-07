@@ -1,0 +1,60 @@
+def name = 'jenkins'
+def buildDir = 'build'
+
+properties([
+    parameters([
+        string(name: 'baseImage', defaultValue: 'openshift/jenkins-2-centos7', description: 'The base image to build from'),
+        string(name: 'jenkinsVersion', defaultValue: '2.105', description: 'The version of Jenkins to use'),
+    ])
+])
+
+node() {
+    stage('Clean Checkout') {
+        deleteDir()
+        checkout scm
+    }
+
+    stage('Prepare Build Artefacts') {
+        dir(buildDir) {
+            sh "curl -sSL -o jenkins.war ${jenkinsUrl()}"
+            writeFile(file: 'Dockerfile', text: createDockerfile())
+        }
+    }
+
+    stage('Build Image') {
+        openshift.withCluster() {
+            namespace = openshift.project()
+
+            if(!openshift.selector('bc', name).exists()) {
+                openshift.newBuild("--name=${name}",
+                    "--to=${namespace}/${name}:latest",
+                    '--binary=true')
+            }
+
+            dir(buildDir) {
+                build = openshift.startBuild(name,
+                    '--from-dir="."',
+                    '--wait=true').narrow('build').object()
+
+                imageDigest = build.status.output.to.imageDigest
+                buildNumber = "${build.metadata.annotations.get('openshift.io/build.number')}"
+
+                echo "Build #${buildNumber} created ${namespace}/${name}@${imageDigest}"
+             }
+        }
+    }
+}
+
+def jenkinsUrl() {
+    "https://updates.jenkins-ci.org/download/war/${params.jenkinsVersion}/jenkins.war"
+}
+
+def createDockerfile() {
+"""\
+FROM ${params.baseImage}
+
+ENV JENKINS_VERSION=${params.jenkinsVersion}
+
+COPY jenkins.war /usr/lib/jenkins/jenkins.war
+"""
+}
