@@ -17,6 +17,7 @@ node() {
     stage('Prepare Build Artefacts') {
         dir(buildDir) {
             sh "curl -sSL -o jenkins.war ${jenkinsUrl()}"
+            writeFile(file: 'plugins.txt', text: createPluginsTxt())
             writeFile(file: 'Dockerfile', text: createDockerfile())
         }
     }
@@ -49,6 +50,24 @@ def jenkinsUrl() {
     "https://updates.jenkins-ci.org/download/war/${params.jenkinsVersion}/jenkins.war"
 }
 
+def createPluginsTxt() {
+'''\
+junit:1.24
+subversion:2.10.2
+git:3.7.0
+script-security:1.40
+job-dsl:1.67
+config-file-provider:2.17
+parameterized-trigger:2.35.2
+pipeline-input-step:2.8
+pipeline-build-step:2.7
+workflow-support:2.18
+workflow-cps:2.44
+workflow-durable-task-step:2.18
+openshift-client:1.0.5
+'''
+}
+
 def createDockerfile() {
 """\
 FROM ${params.baseImage}
@@ -56,5 +75,7 @@ FROM ${params.baseImage}
 ENV JENKINS_VERSION=${params.jenkinsVersion}
 
 COPY jenkins.war /usr/lib/jenkins/jenkins.war
+COPY plugins.txt /opt/openshift/configuration/plugins.txt
+RUN /usr/local/bin/install-plugins.sh /opt/openshift/configuration/plugins.txt
 """
 }
